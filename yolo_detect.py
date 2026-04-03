@@ -124,6 +124,7 @@ avg_frame_rate = 0
 frame_rate_buffer = []
 fps_avg_len = 200
 img_count = 0
+display_enabled = True
 
 # Begin inference loop
 while True:
@@ -208,14 +209,22 @@ while True:
     
     # Display detection results
     cv2.putText(frame, f'Number of objects: {object_count}', (10,40), cv2.FONT_HERSHEY_SIMPLEX, .7, (0,255,255), 2) # Draw total number of detected objects
-    cv2.imshow('YOLO detection results',frame) # Display image
+    if display_enabled:
+        try:
+            cv2.imshow('YOLO detection results',frame) # Display image
+        except cv2.error:
+            # Continue inference/recording when OpenCV is built without GUI support.
+            display_enabled = False
+            print('WARNING: OpenCV GUI is not available on this system. Continuing without display window.')
     if record: recorder.write(frame)
 
     # If inferencing on individual images, wait for user keypress before moving to next image. Otherwise, wait 5ms before moving to next frame.
-    if source_type == 'image' or source_type == 'folder':
-        key = cv2.waitKey()
-    elif source_type == 'video' or source_type == 'usb' or source_type == 'picamera':
-        key = cv2.waitKey(5)
+    key = -1
+    if display_enabled:
+        if source_type == 'image' or source_type == 'folder':
+            key = cv2.waitKey()
+        elif source_type == 'video' or source_type == 'usb' or source_type == 'picamera':
+            key = cv2.waitKey(5)
     
     if key == ord('q') or key == ord('Q'): # Press 'q' to quit
         break
