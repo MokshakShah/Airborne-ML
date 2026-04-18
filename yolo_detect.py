@@ -8,6 +8,7 @@ import time
 import cv2
 import numpy as np
 from ultralytics import YOLO
+from collections import deque
 
 # Define and parse user input arguments
 
@@ -24,6 +25,24 @@ parser.add_argument('--resolution', help='Resolution in WxH to display inference
                     default=None)
 parser.add_argument('--record', help='Record results from video or webcam and save it as "demo1.avi". Must specify --resolution argument to record.',
                     action='store_true')
+parser.add_argument('--imgsz', help='Inference image size used by YOLO (higher can improve far/small object recall).',
+                    type=int, default=1280)
+parser.add_argument('--focus-zoom', help='Enable second-pass ROI zoom and re-detection for small/far objects.',
+                    action='store_true')
+parser.add_argument('--far-object-ratio', help='Relative bbox area threshold to consider object far/small (example: "0.02").',
+                    type=float, default=0.02)
+parser.add_argument('--zoom-factor', help='ROI expansion factor around far object before second-pass detection (example: "2.0").',
+                    type=float, default=2.0)
+parser.add_argument('--focus-imgsz', help='Inference size for second-pass focus ROI. Defaults to --imgsz.',
+                    type=int, default=None)
+parser.add_argument('--preserve-quality', help='Avoid resizing inference frames to preserve detection quality.',
+                    action='store_true')
+parser.add_argument('--far-label-guard', help='Avoid hard class labels for tiny/far objects unless confidence is very high.',
+                    action='store_true')
+parser.add_argument('--far-classify-conf', help='Min confidence to keep fine class label for tiny/far objects.',
+                    type=float, default=0.82)
+parser.add_argument('--class-stability-frames', help='Frames used for majority-vote class stabilization.',
+                    type=int, default=8)
 
 args = parser.parse_args()
 
@@ -34,6 +53,45 @@ img_source = args.source
 min_thresh = args.thresh
 user_res = args.resolution
 record = args.record
+imgsz = args.imgsz
+focus_zoom = args.focus_zoom
+far_object_ratio = args.far_object_ratio
+zoom_factor = args.zoom_factor
+focus_imgsz = args.focus_imgsz
+preserve_quality = args.preserve_quality
+far_label_guard = args.far_label_guard
+far_classify_conf = args.far_classify_conf
+class_stability_frames = args.class_stability_frames
+
+# Normalize threshold to float
+min_thresh = float(min_thresh)
+
+# Basic argument validation
+if far_object_ratio <= 0 or far_object_ratio >= 1:
+    print('ERROR: --far-object-ratio must be between 0 and 1 (exclusive).')
+    sys.exit(0)
+
+if zoom_factor < 1.0:
+    print('ERROR: --zoom-factor must be >= 1.0.')
+    sys.exit(0)
+
+if imgsz < 320:
+    print('ERROR: --imgsz must be >= 320.')
+    sys.exit(0)
+
+if focus_imgsz is None:
+    focus_imgsz = imgsz
+elif focus_imgsz < 320:
+    print('ERROR: --focus-imgsz must be >= 320.')
+    sys.exit(0)
+
+if far_classify_conf <= 0 or far_classify_conf > 1:
+    print('ERROR: --far-classify-conf must be in (0, 1].')
+    sys.exit(0)
+
+if class_stability_frames < 1:
+    print('ERROR: --class-stability-frames must be >= 1.')
+    sys.exit(0)
 
 # Check if model file exists and is valid
 if (not os.path.exists(model_path)):
@@ -126,6 +184,46 @@ frame_rate_buffer = []
 fps_avg_len = 200
 img_count = 0
 display_enabled = True
+class_history = deque(maxlen=class_stability_frames)
+
+
+def clamp(val, low, high):
+    return max(low, min(high, val))
+
+
+def compute_zoom_roi(xmin, ymin, xmax, ymax, frame_w, frame_h, zoom_scale):
+    """Return expanded ROI around a detection while staying inside frame bounds."""
+    box_w = xmax - xmin
+    box_h = ymax - ymin
+    cx = xmin + (box_w // 2)
+    cy = ymin + (box_h // 2)
+
+    roi_w = int(box_w * zoom_scale)
+    roi_h = int(box_h * zoom_scale)
+    # Keep enough contextual pixels around far objects for stable second-pass inference.
+    roi_w = clamp(roi_w, 96, frame_w)
+    roi_h = clamp(roi_h, 96, frame_h)
+
+    x1 = int(clamp(cx - (roi_w // 2), 0, frame_w - 1))
+    y1 = int(clamp(cy - (roi_h // 2), 0, frame_h - 1))
+    x2 = int(clamp(x1 + roi_w, 1, frame_w))
+    y2 = int(clamp(y1 + roi_h, 1, frame_h))
+
+    # Re-adjust start if clamped end changed size
+    x1 = int(clamp(x2 - roi_w, 0, frame_w - 1))
+    y1 = int(clamp(y2 - roi_h, 0, frame_h - 1))
+    return x1, y1, x2, y2
+
+
+def stable_label(current_label):
+    """Return majority-vote label over recent frames to reduce flicker/confusion."""
+    class_history.append(current_label)
+    if len(class_history) == 0:
+        return current_label
+    counts = {}
+    for label in class_history:
+        counts[label] = counts.get(label, 0) + 1
+    return max(counts, key=counts.get)
 
 # Begin inference loop
 while True:
@@ -160,18 +258,32 @@ while True:
             print('Unable to read frames from the Picamera. This indicates the camera is disconnected or not working. Exiting program.')
             break
 
-    # Resize frame to desired display resolution
-    if resize == True:
-        frame = cv2.resize(frame,(resW,resH))
+    # Keep source quality for inference when requested.
+    infer_frame = frame
+    if resize == True and not preserve_quality:
+        infer_frame = cv2.resize(frame,(resW,resH))
+    elif resize == True and preserve_quality:
+        # Preserve-quality mode keeps inference on native frame.
+        # Display/record frame can still be resized later.
+        infer_frame = frame
 
-    # Run inference on frame
-    results = model(frame, verbose=False)
+    # Run first-pass inference on frame
+    results = model(infer_frame, imgsz=imgsz, verbose=False)
+
+    # Draw on this frame and only resize for display at the end if needed
+    output_frame = infer_frame.copy()
 
     # Extract results
     detections = results[0].boxes
 
     # Initialize variable for basic object counting example
     object_count = 0
+
+    frame_h, frame_w = infer_frame.shape[:2]
+    frame_area = float(frame_h * frame_w)
+
+    # Track far/small detections to run second-pass zoom inference
+    focus_candidates = []
 
     # Go through each detection and get bbox coords, confidence, and class
     for i in range(len(detections)):
@@ -190,19 +302,85 @@ while True:
         conf = detections[i].conf.item()
 
         # Draw box if confidence threshold is high enough
-        if conf > 0.5:
+        if conf > min_thresh:
 
             color = bbox_colors[classidx % 10]
-            cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), color, 2)
+            cv2.rectangle(output_frame, (xmin,ymin), (xmax,ymax), color, 2)
 
-            label = f'{classname}: {int(conf*100)}%'
+            # Estimate relative size to identify tiny/far targets.
+            bbox_area = float(max(1, (xmax - xmin) * (ymax - ymin)))
+            area_ratio = bbox_area / frame_area
+
+            label_name = classname
+
+            # Guard fine-grained class decisions on tiny/far objects.
+            if far_label_guard and area_ratio <= far_object_ratio and conf < far_classify_conf:
+                label_name = 'airborne-object-far'
+
+            # Stabilize label output across nearby frames.
+            label_name = stable_label(label_name)
+
+            label = f'{label_name}: {int(conf*100)}%'
             labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1) # Get font size
             label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
-            cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), color, cv2.FILLED) # Draw white box to put label text in
-            cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1) # Draw label text
+            cv2.rectangle(output_frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), color, cv2.FILLED) # Draw white box to put label text in
+            cv2.putText(output_frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1) # Draw label text
 
             # Basic example: count the number of objects in the image
             object_count = object_count + 1
+
+            # Mark small/far objects for second-pass zoom inference
+            if focus_zoom and area_ratio <= far_object_ratio:
+                focus_candidates.append((xmin, ymin, xmax, ymax))
+
+    # Run second-pass detection in zoomed ROI for far/small candidates
+    for (xmin, ymin, xmax, ymax) in focus_candidates:
+        rx1, ry1, rx2, ry2 = compute_zoom_roi(xmin, ymin, xmax, ymax, frame_w, frame_h, zoom_factor)
+        roi = infer_frame[ry1:ry2, rx1:rx2]
+        if roi.size == 0:
+            continue
+
+        # Run second-pass detection directly on native ROI pixels (no synthetic upscaling artifacts).
+        zoom_results = model(roi, imgsz=focus_imgsz, verbose=False)
+        zoom_detections = zoom_results[0].boxes
+
+        # Visualize focus region
+        cv2.rectangle(output_frame, (rx1, ry1), (rx2, ry2), (0, 255, 255), 1)
+        cv2.putText(output_frame, 'Focus ROI', (rx1, max(15, ry1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+        scale_x = (rx2 - rx1) / float(max(1, roi.shape[1]))
+        scale_y = (ry2 - ry1) / float(max(1, roi.shape[0]))
+
+        for j in range(len(zoom_detections)):
+            z_conf = zoom_detections[j].conf.item()
+            if z_conf <= min_thresh:
+                continue
+
+            z_xyxy = zoom_detections[j].xyxy.cpu().numpy().squeeze().astype(int)
+            zx1, zy1, zx2, zy2 = z_xyxy
+            z_classidx = int(zoom_detections[j].cls.item())
+            z_classname = labels[z_classidx]
+            z_color = bbox_colors[z_classidx % 10]
+
+            # Map zoomed ROI detections back to full-frame coordinates
+            gx1 = int(clamp(rx1 + zx1 * scale_x, 0, frame_w - 1))
+            gy1 = int(clamp(ry1 + zy1 * scale_y, 0, frame_h - 1))
+            gx2 = int(clamp(rx1 + zx2 * scale_x, 0, frame_w - 1))
+            gy2 = int(clamp(ry1 + zy2 * scale_y, 0, frame_h - 1))
+
+            cv2.rectangle(output_frame, (gx1, gy1), (gx2, gy2), z_color, 2)
+            z_label = f'{z_classname}: {int(z_conf*100)}% (zoom)'
+            z_size, z_base = cv2.getTextSize(z_label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            z_y = max(gy1, z_size[1] + 10)
+            cv2.rectangle(output_frame, (gx1, z_y-z_size[1]-10), (gx1+z_size[0], z_y+z_base-10), z_color, cv2.FILLED)
+            cv2.putText(output_frame, z_label, (gx1, z_y-7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+
+            object_count = object_count + 1
+
+    # Optionally resize only for viewing/recording
+    frame = output_frame
+    if resize == True:
+        frame = cv2.resize(frame,(resW,resH))
 
     # Calculate and draw framerate (if using video, USB, or Picamera source)
     if source_type == 'video' or source_type == 'usb' or source_type == 'picamera':
