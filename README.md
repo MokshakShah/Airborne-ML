@@ -109,29 +109,115 @@ pip install --upgrade torch torchvision torchaudio --index-url https://download.
 pip install ultralytics opencv-python numpy requests
 ```
 
-### 2. Quick Test - YOLO Detection
+### 2. Quick Test - Roboflow Video Detection (Best Accuracy) ⭐
 ```bash
-python yolo_detect.py --model my_model.pt --source video1.mp4
+python roboflow_workflow_detect.py --source video1.mp4 --api-key "qWYGAo2O7gUiuDPKyGSQ"
 ```
 
 **Expected Output**:
 - Live video window with green bounding boxes
 - Confidence percentages for each detection
-- FPS counter (target: 30 FPS)
 - Object count per frame
+- **Best detection accuracy**
+
+### 3. Quick Test - Roboflow Image Detection (Best Accuracy) ⭐
+```bash
+python image_detect_roboflow.py --image test.jpg --api-key "qWYGAo2O7gUiuDPKyGSQ" --save-output
+```
+
+**Expected Output**:
+- Image window with green bounding boxes
+- Confidence percentages per detection
+- Inference time in milliseconds
+- Object count
+- **Saved annotated image**: `images/roboflow_detection.jpg`
 
 ---
 
 ## 💻 Usage Guide
 
-### A. YOLO Real-Time Detection (Recommended for Speed)
+### A. Roboflow Video Detection (RECOMMENDED - Best Accuracy) ⭐
+
+#### Basic Usage
+```bash
+python roboflow_workflow_detect.py --source video1.mp4 --api-key "qWYGAo2O7gUiuDPKyGSQ"
+```
+
+#### Fast Detection with Frame Skipping
+```bash
+python roboflow_workflow_detect.py \
+  --source video1.mp4 \
+  --api-key "qWYGAo2O7gUiuDPKyGSQ" \
+  --stride 5
+```
+- **Speed**: ~6 FPS effective (processes every 5th frame)
+- **Use Case**: Real-time surveillance with good accuracy
+
+#### High Confidence Detection
+```bash
+python roboflow_workflow_detect.py \
+  --source video1.mp4 \
+  --api-key "qWYGAo2O7gUiuDPKyGSQ" \
+  --confidence 0.6
+```
+- **Use Case**: Reduce false positives, only strong detections
+
+---
+
+### B. Roboflow Image Detection (RECOMMENDED - Best Accuracy) ⭐
+
+#### Basic Image Detection
+```bash
+python image_detect_roboflow.py \
+  --image test.jpg \
+  --api-key "qWYGAo2O7gUiuDPKyGSQ"
+```
+
+#### Save Annotated Image
+```bash
+python image_detect_roboflow.py \
+  --image test.jpg \
+  --api-key "qWYGAo2O7gUiuDPKyGSQ" \
+  --save-output \
+  --output-name detection_result.jpg
+```
+
+#### High Confidence Detections Only
+```bash
+python image_detect_roboflow.py \
+  --image test.jpg \
+  --api-key "qWYGAo2O7gUiuDPKyGSQ" \
+  --confidence 0.7 \
+  --save-output
+```
+
+#### Batch Process Multiple Images
+```bash
+for img in *.jpg; do
+  python image_detect_roboflow.py \
+    --image "$img" \
+    --api-key "qWYGAo2O7gUiuDPKyGSQ" \
+    --save-output --output-name "detected_$img"
+done
+```
+
+**Output**: 
+- Live display with green bounding boxes
+- Confidence percentages per detection
+- Inference time in milliseconds
+- Object count
+- Optional saved annotated image
+
+---
+
+### C. YOLO Local Detection (Fast Alternative for Offline Use)
 
 #### Basic Usage
 ```bash
 python yolo_detect.py --model my_model.pt --source video1.mp4
 ```
 
-#### High-Quality Detection (Best Accuracy)
+#### High-Quality Detection
 ```bash
 python yolo_detect.py \
   --model my_model.pt \
@@ -159,7 +245,7 @@ python yolo_detect.py \
 ```bash
 python yolo_detect.py \
   --model my_model.pt \
-  --source usb0 \
+  --source 0 \
   --resolution 1280x720
 ```
 
@@ -176,19 +262,7 @@ Output: `demo1.avi` (annotated video with detections)
 
 ---
 
-### B. Roboflow Cloud Detection (Best Accuracy, Slower)
-
-#### Basic Usage
-```bash
-python roboflow_workflow_detect.py \
-  --source video1.mp4 \
-  --api-key "qWYGAo2O7gUiuDPKyGSQ"
-```
-
-#### Fast Detection with Frame Skipping
-```bash
-python roboflow_workflow_detect.py \
-  --source video1.mp4 \
+### D. Local Image Detection (YOLO Alternative for Offline)
   --api-key "qWYGAo2O7gUiuDPKyGSQ" \
   --stride 5
 ```
@@ -208,12 +282,34 @@ python roboflow_workflow_detect.py \
 
 ## 📋 Command Reference
 
-### YOLO Detection Arguments
+### Roboflow Video Detection Arguments ⭐
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--source` | str | Required | Video file path or webcam (e.g., `video.mp4`) |
+| `--api-key` | str | Required | Roboflow API key (e.g., `qWYGAo2O7gUiuDPKyGSQ`) |
+| `--confidence` | float | 0.25 | Display confidence threshold |
+| `--stride` | int | 1 | Process every Nth frame (1=all, 5=every 5th) |
+| `--resolution` | str | None | Display resolution (e.g., `1280x720`) |
+
+### Roboflow Image Detection Arguments ⭐
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--image` | str | Required | Image file path (e.g., `photo.jpg`) |
+| `--api-key` | str | Required | Roboflow API key |
+| `--confidence` | float | 0.25 | Detection confidence threshold |
+| `--overlap` | float | 0.3 | NMS overlap threshold |
+| `--save-output` | flag | False | Save annotated image |
+| `--output-name` | str | `roboflow_detection.jpg` | Output filename |
+| `--resolution` | str | None | Resize image before detection |
+
+### YOLO Local Video Detection Arguments (Alternative)
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `--model` | str | Required | Path to YOLO model (e.g., `my_model.pt`) |
-| `--source` | str | Required | Input: video file, image folder, or `usb0` for webcam |
+| `--source` | str | Required | Input: video file or webcam |
 | `--thresh` | float | 0.5 | Confidence threshold for detection display |
 | `--resolution` | str | None | Display resolution (e.g., `1280x720`) |
 | `--record` | flag | False | Record annotated video output |
@@ -222,18 +318,20 @@ python roboflow_workflow_detect.py \
 | `--far-object-ratio` | float | 0.02 | Threshold for considering object as far/small |
 | `--zoom-factor` | float | 2.0 | ROI expansion factor for zoomed detection |
 | `--preserve-quality` | flag | False | Use original resolution for inference |
-| `--far-label-guard` | flag | False | Avoid uncertain labels for tiny objects |
 
-### Roboflow Detection Arguments
+### YOLO Local Image Detection Arguments (Alternative)
 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
-| `--source` | str | Required | Video file path or `usb0` for webcam |
-| `--api-key` | str | Required | Roboflow API key |
-| `--confidence` | float | 0.25 | Display confidence threshold |
-| `--stride` | int | 1 | Process every Nth frame (1=all, 5=every 5th) |
+| `--image` | str | Required | Path to image file (e.g., `test.jpg`) |
+| `--model` | str | Required | Path to YOLO model (e.g., `my_model.pt`) |
+| `--thresh` | float | 0.5 | Confidence threshold for detection |
+| `--imgsz` | int | 1280 | Inference image size |
 | `--resolution` | str | None | Display resolution (e.g., `1280x720`) |
-| `--api-url` | str | Default URL | Roboflow API endpoint |
+| `--save-output` | flag | False | Save annotated image to file |
+| `--output-name` | str | `image_detection.jpg` | Output filename |
+| `--focus-zoom` | flag | False | Enable multi-scale detection |
+| `--zoom-factor` | float | 2.0 | ROI zoom expansion factor |
 
 ---
 
@@ -247,7 +345,15 @@ python roboflow_workflow_detect.py \
 - [x] FPS calculation and display
 - [x] Object counting per frame
 
-### Phase 2: Multi-Scale Enhancement ✅
+### Phase 2: Image Classification ✅
+- [x] Single image detection and classification
+- [x] Green bounding boxes on static images
+- [x] Confidence display per detection
+- [x] Inference time measurement
+- [x] Annotated image saving
+- [x] Multi-scale detection for images
+
+### Phase 3: Multi-Scale Enhancement ✅
 - [x] Far-object detection using ROI zoom
 - [x] Quality-preserving inference (no downsampling artifacts)
 - [x] Two-pass detection pipeline
@@ -255,27 +361,27 @@ python roboflow_workflow_detect.py \
 - [x] Automatic far-object identification
 - [x] Adaptive zoom factor
 
-### Phase 3: Label Stabilization ✅
+### Phase 4: Label Stabilization ✅
 - [x] Temporal label smoothing
 - [x] Majority-vote class assignment
 - [x] 8-frame history buffer
 - [x] Flicker reduction
 
-### Phase 4: Multi-Model Integration ✅
+### Phase 5: Multi-Model Integration ✅
 - [x] Roboflow API integration
 - [x] Cloud-based detection support
 - [x] Ensemble detection capability
 - [x] Model comparison framework
 - [x] Real-time display without JSON output
 
-### Phase 5: Performance Optimization ✅
+### Phase 6: Performance Optimization ✅
 - [x] GPU acceleration with CUDA
 - [x] Frame skipping for real-time speed
 - [x] Efficient memory management
 - [x] Configurable resolution
 - [x] Video recording capability
 
-### Phase 6: Documentation ✅
+### Phase 7: Documentation ✅
 - [x] Comprehensive Project.md (academic format)
 - [x] Updated README with dataset details
 - [x] Usage examples and command reference
@@ -345,8 +451,13 @@ Airborne-Threat-Detection-System/
 ├── Project.md                             (Academic documentation)
 ├── my_model.pt                            (Trained YOLO model)
 │
-├── yolo_detect.py                         (Main YOLO detection script)
-├── roboflow_workflow_detect.py            (Roboflow API detection)
+├── roboflow_workflow_detect.py            (⭐ Roboflow video detection - BEST ACCURACY)
+├── image_detect_roboflow.py               (⭐ Roboflow image detection - BEST ACCURACY)
+│
+├── yolo_detect.py                         (Fast local video detection - offline alternative)
+├── image_detect.py                        (Fast local image detection - offline alternative)
+│
+├── images/                                (📁 Detected/annotated images saved here)
 │
 ├── train3/                                (Training artifacts)
 │   ├── weights/
@@ -404,26 +515,76 @@ python roboflow_workflow_detect.py --source video1.mp4 --api-key "qWYGAo2O7gUiuD
 
 ---
 
-## 📈 Model Comparison
+## 📈 Method Comparison
 
-| Aspect | YOLO Local | Roboflow API |
-|--------|-----------|--------------|
-| **Speed** | ⭐⭐⭐⭐⭐ (30 FPS) | ⭐⭐ (1-2 FPS) |
-| **Accuracy** | ⭐⭐⭐⭐ (mAP 0.678) | ⭐⭐⭐⭐⭐ (0.85+) |
-| **Latency** | 33-40ms | 500-800ms |
-| **Deployment** | Local GPU | Cloud API |
-| **Cost** | Free | Per-request |
-| **Privacy** | Local processing | Cloud upload |
-| **Use Case** | Real-time monitoring | High-accuracy analysis |
+| Aspect | Roboflow ⭐ | YOLO Local | When to Use |
+|--------|-----------|-----------|-------------|
+| **Accuracy** | ⭐⭐⭐⭐⭐ Highest (specialized models) | ⭐⭐⭐⭐ Good (mAP 0.678) | **Roboflow** for critical detections |
+| **Speed** | ⭐⭐ (1-2 FPS raw) | ⭐⭐⭐⭐⭐ (30 FPS) | **YOLO** for real-time, **Roboflow** for analysis |
+| **Latency** | 500-800ms per frame | 33-40ms per frame | **YOLO** for <50ms latency requirement |
+| **GPU Required** | ❌ No (cloud) | ✅ Yes (4.2 GB) | **Roboflow** if no GPU available |
+| **Internet Required** | ✅ Yes | ❌ No | **YOLO** for offline/airgapped environments |
+| **Cost** | Paid per API call | Free (once trained) | Budget consideration |
+| **Privacy** | Cloud upload | Local processing only | **YOLO** for sensitive data |
+| **Frame Skipping Support** | ✅ Yes (--stride) | ❌ No | **Roboflow** for 6 FPS effective speed |
 
-**Recommendation**:
-- 🚀 **Real-time**: Use YOLO (fast, local)
-- 🎯 **High accuracy**: Use Roboflow or ensemble
-- 📊 **Best of both**: Frame-skip Roboflow (every 5th frame)
+**Recommendation**: 
+- ✅ **Default choice**: Use **Roboflow** for best accuracy
+- 🔄 **Balanced**: Use Roboflow with --stride 5 for ~6 FPS effective
+- ⚡ **Offline/Real-time**: Use **YOLO** locally when internet unavailable
 
 ---
 
 ## 🚀 Performance Tips
+
+### For Roboflow Image Detection (RECOMMENDED) ⭐
+
+1. **Quick Detection** (Default settings)
+   ```bash
+   python image_detect_roboflow.py --image photo.jpg --api-key "qWYGAo2O7gUiuDPKyGSQ"
+   ```
+
+2. **High Confidence Only** (Fewer false positives)
+   ```bash
+   python image_detect_roboflow.py --image photo.jpg --api-key "qWYGAo2O7gUiuDPKyGSQ" \
+     --confidence 0.7 --save-output
+   ```
+
+3. **Save Annotated Results** (For reports/analysis)
+   ```bash
+   python image_detect_roboflow.py --image photo.jpg --api-key "qWYGAo2O7gUiuDPKyGSQ" \
+     --save-output --output-name detection_report.jpg
+   ```
+
+4. **Batch Processing** (Process multiple images)
+   ```bash
+   for img in *.jpg; do
+     python image_detect_roboflow.py --image "$img" --api-key "qWYGAo2O7gUiuDPKyGSQ" \
+       --save-output --output-name "detected_$img"
+   done
+   ```
+
+### For Roboflow Video Detection (RECOMMENDED) ⭐
+
+1. **For Maximum Accuracy** (All frames, best quality)
+   ```bash
+   python roboflow_workflow_detect.py --source video.mp4 \
+     --api-key "qWYGAo2O7gUiuDPKyGSQ" --confidence 0.25
+   ```
+
+2. **For Balanced Performance** (Every 3rd frame, ~2-3 FPS)
+   ```bash
+   python roboflow_workflow_detect.py --source video.mp4 \
+     --api-key "qWYGAo2O7gUiuDPKyGSQ" --stride 3 --confidence 0.4
+   ```
+
+3. **For Speed** (Every 5th frame, ~6 FPS effective)
+   ```bash
+   python roboflow_workflow_detect.py --source video.mp4 \
+     --api-key "qWYGAo2O7gUiuDPKyGSQ" --stride 5
+   ```
+
+### For YOLO Local Detection (When Internet Unavailable)
 
 1. **For Maximum Speed** (Real-time monitoring)
    ```bash
@@ -442,15 +603,87 @@ python roboflow_workflow_detect.py --source video1.mp4 --api-key "qWYGAo2O7gUiuD
      --imgsz 1280 --thresh 0.6
    ```
 
-4. **For Cloud Accuracy** (Best results, slower)
-   ```bash
-   python roboflow_workflow_detect.py --source video.mp4 \
-     --api-key "YOUR_API_KEY" --stride 3
-   ```
-
 ---
 
-## 📚 Additional Resources
+## 📚 Additional Resources & Examples
+
+### Roboflow Image Detection Examples ⭐
+```bash
+# Simple image detection (saves to images/ folder)
+python image_detect_roboflow.py --image drone_photo.jpg --api-key "qWYGAo2O7gUiuDPKyGSQ"
+
+# High confidence (fewer false positives, saves to images/)
+python image_detect_roboflow.py --image aircraft.png --api-key "qWYGAo2O7gUiuDPKyGSQ" --confidence 0.7
+
+# Save results for reports (in images/ folder)
+python image_detect_roboflow.py --image test.jpg --api-key "qWYGAo2O7gUiuDPKyGSQ" --save-output
+
+# Batch detection (all results saved to images/)
+for img in *.jpg; do
+  echo "Processing $img..."
+  python image_detect_roboflow.py --image "$img" --api-key "qWYGAo2O7gUiuDPKyGSQ" \
+    --save-output --output-name "detected_$img"
+done
+```
+
+### Roboflow Video Detection Examples ⭐
+```bash
+# Simple video detection
+python roboflow_workflow_detect.py --source security_footage.mp4 \
+  --api-key "qWYGAo2O7gUiuDPKyGSQ"
+
+# Fast processing (every 5th frame)
+python roboflow_workflow_detect.py --source video.mp4 \
+  --api-key "qWYGAo2O7gUiuDPKyGSQ" --stride 5
+
+# High confidence detection
+python roboflow_workflow_detect.py --source video.mp4 \
+  --api-key "qWYGAo2O7gUiuDPKyGSQ" --confidence 0.6
+
+# Balanced speed and accuracy
+python roboflow_workflow_detect.py --source video.mp4 \
+  --api-key "qWYGAo2O7gUiuDPKyGSQ" --stride 3 --confidence 0.4
+```
+
+### YOLO Local Detection Examples (Offline Alternative)
+```bash
+# Simple image detection
+python image_detect.py --image drone_photo.jpg --model my_model.pt
+
+# With custom confidence
+python image_detect.py --image aircraft.png --model my_model.pt --thresh 0.7
+
+# High resolution analysis
+python image_detect.py --image test.jpg --model my_model.pt --imgsz 1280 --save-output
+
+# Multi-scale detection (find small objects)
+python image_detect.py --image sky.jpg --model my_model.pt --focus-zoom --zoom-factor 2.5
+
+# Save with custom filename
+python image_detect.py --image photo.jpg --model my_model.pt \
+  --save-output --output-name my_detection_results.jpg
+
+# Batch detection (shell script example)
+for img in *.jpg; do
+  python image_detect.py --image "$img" --model my_model.pt --save-output --output-name "detected_$img"
+done
+```
+
+### Video Detection Examples
+```bash
+# Simple video detection
+python yolo_detect.py --model my_model.pt --source security_footage.mp4
+
+# With custom threshold
+python yolo_detect.py --model my_model.pt --source video.mp4 --thresh 0.6
+
+# High quality detection
+python yolo_detect.py --model my_model.pt --source video.mp4 --imgsz 1280
+
+# Multi-scale with recording
+python yolo_detect.py --model my_model.pt --source video.mp4 \
+  --focus-zoom --record --resolution 1280x720
+```
 
 - **Project Documentation**: See `Project.md` for academic paper format
 - **Dataset 1**: https://universe.roboflow.com/duarte/flyingdrones
@@ -463,25 +696,44 @@ python roboflow_workflow_detect.py --source video1.mp4 --api-key "qWYGAo2O7gUiuD
 
 ## ✨ Features Highlights
 
-### Real-Time Visualization
+### ⭐ Roboflow Cloud Detection (RECOMMENDED - Best Accuracy)
+- **Highest detection accuracy** with specialized ensemble models
 - Live video display with green detection boxes
-- Confidence percentage per detection
-- FPS counter for performance monitoring
-- Object count per frame
-- Keyboard controls (pause, capture, quit)
+- Supports frame skipping for ~6 FPS effective speed (--stride 5)
+- No local GPU required (cloud-based processing)
+- Confidence-based filtering for reduced false positives
+- Batch image processing support
 
-### Advanced Detection
-- **Multi-scale inference**: 25-35% better accuracy for small objects
+### Video Detection
+- Real-time live video display with green detection boxes
+- Confidence percentage per detection
+- FPS counter and object count per frame
+- Keyboard controls (pause, capture, quit)
+- Optional video recording capability
+- Webcam and video file input support
+
+### Image Classification
+- Single or batch image detection and analysis
+- Green bounding box visualization with confidence scores
+- Inference time measurement (in milliseconds)
+- Object count and detailed per-object statistics
+- Annotated image saving for reports and documentation
+- Flexible resolution support
+
+### Advanced Features
+- **Cloud Accuracy**: Roboflow API with specialized models for best results
+- **Multi-scale inference** (YOLO): 25-35% better accuracy for small objects
 - **ROI zoom**: Intelligent focus on distant threats
+- **Frame skipping**: Process every Nth frame for faster throughput
+- **Label stabilization**: Smooth label transitions across video frames
 - **Quality preservation**: Full-resolution inference without artifacts
-- **Label stabilization**: Smooth label transitions across frames
 
 ### Deployment Flexibility
-- Local GPU inference for privacy and speed
-- Cloud API option for maximum accuracy
-- Ensemble detection combining both models
-- Frame skipping for real-time cloud processing
-- Scalable from edge devices to cloud servers
+- **Cloud-based option** (Roboflow): Maximum accuracy, no GPU needed
+- **Local GPU option** (YOLO): Fast real-time, offline-capable
+- **Frame skipping**: Adjust speed-accuracy tradeoff
+- **Scalable**: From edge devices to cloud servers
+- **Multiple input formats**: Videos, images, webcam streams
 
 ---
 
